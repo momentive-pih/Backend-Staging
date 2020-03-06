@@ -7,6 +7,6 @@ urlpatterns = [
     path('selectedProducts',views.selected_products, name='selected_products'),
     # path('selectedCategories',views.selected_categories, name='selected_categories'),
     # path('basicDetails',category_management.basic_properties, name='basic_properties'),
-    # path('productsolr',category_management.solar_connection, name="solar_connection")
+    path('getSpecList',views.get_spec_list, name="get_spec_list")
 ]
 

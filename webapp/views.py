@@ -33,12 +33,14 @@ category_with_key=[["NAM*","TEXT1","NAMPROD","REAL_SUB","PRODUCT-LEVEL",product_
                 ["SPEC*","TEXT2","NUMCAS","PURE_SUB","CAS-LEVEL",cas_pspec_category]]
 category_type = ["MATNBR","NUMCAS","NAMPROD"]
 search_category = ["TEXT1","TEXT2","TEXT3"]
-selected_categories=["BDT*","MAT*","NAM*","CAS*","CHEMICAL*","RSPEC*","PSPEC*","SYN*"]
+selected_categories=["BDT*","MAT*","NAM*","CAS*","CHEMICAL*","RSPEC*","PSPEC*","SYN*","SPEC*"]
                 
-# df_product = pd.read_excel(r"C:\Users\MANICKAMM\Desktop\product_info_V2.xlsx",sheet_name="Sheet1")
+df_product = pd.read_excel(r"C:\Users\MANICKAMM\Desktop\product_info_V2.xlsx",sheet_name="Sheet1")
 selected_data_json = {}
 db_url=db_config.get("URL")
 product_tb=db_config.get("product_core")
+spec_count=[]
+real_spec_list=[]
 
 def selected_data_details():
     global selected_data_json
@@ -54,6 +56,7 @@ def product_level_creation(product_df,product_category_map,type,subct,key,level_
     else:
         temp_df=product_df
     temp_df.drop_duplicates(inplace=True)
+    temp_df=temp_df.fillna("-")
     total_count=0
     display_category=''
     json_category=''
@@ -172,8 +175,12 @@ def all_products(requests):
 def selected_products(requests):
     try:
         global selected_data_json
+        global real_spec_list
+        global spec_count
         if requests.method=="POST":
             try:
+                real_spec_list=[]
+                spec_count=0
                 edit_df=pd.DataFrame()
                 searched_product_list=[]
                 data=''
@@ -206,6 +213,7 @@ def selected_products(requests):
                         product_level_flag = 's'
                         product_count = count
                         product_rspec = search_value_split[search_column_split.index("REAL-SPECID")]
+                        product_name = search_value_split[search_column_split.index("NAM PROD")]
                     if search_group == "MATERIAL-LEVEL":
                         material_level_flag = 's'
                         material_count = count
@@ -220,11 +228,15 @@ def selected_products(requests):
                 print("materialflag",material_level_flag)
                 print("material_count",material_count)
                 print("cas_level_flag",cas_level_flag)
-                print("cas_count",cas_count)
-                
+                print("cas_count",cas_count)              
                 if product_level_flag=='s' and product_count==1:
-                    print("ddd")
                     if material_level_flag=='' and cas_level_flag=='':
+                        #######################
+                        spec_count=spec_count+1
+                        val_json={"name":(str(product_rspec)+" | "+product_name),"id":spec_count}
+                        real_spec_list.append(val_json)
+                        print(real_spec_list)
+                        #######################
                         print(product_rspec)     
                         query=f'TYPE:MATNBR && TEXT2:{product_rspec}'
                         temp_df=querying_solr_data(query,params)
@@ -232,8 +244,7 @@ def selected_products(requests):
                         searched_product_list=searched_product_list+product_level_creation(temp_df,material_number_category,"","","MAT*","MATERIAL-LEVEL","yes")
                         #to find cas level details
                         query=f'TYPE:SUBIDREL && TEXT2:{product_rspec}'
-                        temp_df=querying_solr_data(query,params)
-                        
+                        temp_df=querying_solr_data(query,params)                       
                         column_value = temp_df["TEXT1"].unique()
                         temp_df=pd.DataFrame()
                         for item in column_value: 
@@ -253,6 +264,11 @@ def selected_products(requests):
                         
                     elif material_level_flag=='s' and material_count==2 and cas_level_flag=='':
                         #to find cas level details
+                        ##############################
+                        spec_count+=1
+                        val_json={"name":(str(product_rspec)+" | "+product_name),"id":spec_count}
+                        real_spec_list.append(val_json)
+                        ###############################
                         print("matdddd",product_rspec)
                         query=f'TYPE:SUBIDREL && TEXT2:{product_rspec}'
                         temp_df=querying_solr_data(query,params)
@@ -280,6 +296,18 @@ def selected_products(requests):
                         column_value = temp_df["TEXT2"].unique()
                         temp_df=pd.DataFrame()
                         for item in column_value:
+                            ####################
+                            query=f'TYPE:NAMPROD && TEXT2:{item} && SUBCT:REAL_SUB'
+                            params={"rows":2147483647,"fl":"TEXT1,TEXT2"}
+                            val_df=querying_solr_data(query,params)
+                            val_df=val_df[["TEXT2","TEXT1"]]
+                            val_df.drop_duplicates(inplace=True)
+                            val_df=val_df.values.tolist()
+                            for spec,nam in val_df:
+                                spec_count+=1
+                                val_json={"name":(str(spec)+" | "+str(nam)),"id":spec_count}
+                                real_spec_list.append(val_json)
+                            #####################
                             query=f'TYPE:MATNBR && TEXT2:{item}'
                             add_df=querying_solr_data(query,params)
                             # add_df=edit_df[(edit_df["TYPE"]=="MATNBR") & (edit_df["TEXT2"]==item)]
@@ -299,6 +327,16 @@ def selected_products(requests):
                             query=f'TYPE:NAMPROD && SUBCT:REAL_SUB && TEXT2:{item}'
                             add_df=querying_solr_data(query,params)
                             # add_df=edit_df[(edit_df["TYPE"]=="NAMPROD") & (edit_df["SUBCT"]=="REAL_SUB") & (edit_df["TEXT2"]==item)]
+                            #############################                      
+                            val_df=add_df[["TEXT2","TEXT1"]]                        
+                            val_df.drop_duplicates(inplace=True)
+                            val_df=val_df.values.tolist()
+                            print(val_df)
+                            for spec,nam in val_df:
+                                spec_count+=1
+                                val_json={"name":(str(spec)+" | "+str(nam)),"id":spec_count}
+                                real_spec_list.append(val_json)
+                            ############################
                             temp_df=pd.concat([temp_df,add_df])
                         searched_product_list=searched_product_list+product_level_creation(temp_df,product_rspec_category,"","","RSPEC*","PRODUCT-LEVEL","yes")                          
                             #cas level details
@@ -316,6 +354,11 @@ def selected_products(requests):
                         searched_product_list=searched_product_list+product_level_creation(temp_df,cas_number_category,"","","CAS*","CAS-LEVEL","yes")                         
                             
                     elif product_level_flag =='s' and product_count ==2 and cas_level_flag=='':
+                        #######################
+                        spec_count+=1
+                        val_json={"name":(str(product_rspec)+" | "+product_name),"id":spec_count}
+                        real_spec_list.append(val_json)
+                        #######################
                         query=f'TYPE:SUBIDREL && TEXT2:{product_rspec}'
                         temp_df=querying_solr_data(query,params) 
                         # temp_df=edit_df[(edit_df["TYPE"]=="SUBIDREL") & (edit_df["TEXT2"]==product_rspec)]
@@ -337,11 +380,21 @@ def selected_products(requests):
                         for item in column_value:
                             query=f'TYPE:NAMPROD && SUBCT:REAL_SUB && TEXT2:{item}'
                             add_df=querying_solr_data(query,params)
+                            #############################
+                            val_df=add_df[["TEXT2","TEXT1"]]
+                            val_df.drop_duplicates(inplace=True)
+                            val_df=val_df.values.tolist()
+                            for spec,nam in val_df:
+                                spec_count+=1
+                                val_json={"name":(str(spec)+" | "+str(nam)),"id":spec_count}
+                                real_spec_list.append(val_json)
+                            ############################
                             # add_df=edit_df[(edit_df["TYPE"]=="NAMPROD") & (edit_df["SUBCT"]=="REAL_SUB") & (edit_df["TEXT2"]==item)]
                             temp_df=pd.concat([temp_df,add_df])
                         searched_product_list=searched_product_list+product_level_creation(temp_df,product_rspec_category,"","","RSPEC*","PRODUCT-LEVEL","yes")                          
                             
                         # elif cas_level_flag=='s' and product_level_flag =='':
+                
                 elif cas_level_flag=='s' and cas_count==1:
                     if product_level_flag =='' and material_level_flag=='':
                         query=f'TYPE:SUBIDREL && TEXT1:{cas_pspec}'
@@ -352,6 +405,15 @@ def selected_products(requests):
                         for item in column_value:
                             query=f'TYPE:NAMPROD && SUBCT:REAL_SUB && TEXT2:{item}'
                             add_df=querying_solr_data(query,params)
+                            #############################
+                            val_df=add_df[["TEXT2","TEXT1"]]
+                            val_df.drop_duplicates(inplace=True)
+                            val_df=val_df.values.tolist()
+                            for spec,nam in val_df:
+                                spec_count+=1
+                                val_json={"name":(str(spec)+" | "+str(nam)),"id":spec_count}
+                                real_spec_list.append(val_json)
+                            ############################
                             # add_df=edit_df[(edit_df["TYPE"]=="NAMPROD") & (edit_df["SUBCT"]=="REAL_SUB") & (edit_df["TEXT2"]==item)]
                             temp_df=pd.concat([temp_df,add_df])
                         #same pure-spec will be act as real-spec
@@ -369,6 +431,11 @@ def selected_products(requests):
                         searched_product_list=searched_product_list+product_level_creation(temp_df,material_number_category,"","","MAT*","MATERIAL-LEVEL","yes")
 
                     elif product_level_flag =='s' and product_count ==2 and material_level_flag=='':
+                        #######################
+                        spec_count+=1
+                        val_json={"name":(str(product_rspec)+" | "+product_name),"id":spec_count}
+                        real_spec_list.append(val_json)
+                        #######################
                         query=f'TYPE:MATNBR && TEXT2:{product_rspec}'
                         temp_df=querying_solr_data(query,params)
                         # temp_df=edit_df[(edit_df["TYPE"]=="MATNBR") & (edit_df["TEXT2"]==product_rspec)]
@@ -384,13 +451,22 @@ def selected_products(requests):
                             # product level details
                             query=f'TYPE:NAMPROD && SUBCT:REAL_SUB && TEXT2:{item}'
                             add_df=querying_solr_data(query,params)
+                            #############################
+                            val_df=add_df[["TEXT2","TEXT1"]]
+                            val_df.drop_duplicates(inplace=True)
+                            val_df=val_df.values.tolist()
+                            for spec,nam in val_df:
+                                spec_count+=1
+                                val_json={"name":(str(spec)+" | "+str(nam)),"id":spec_count}
+                                real_spec_list.append(val_json)
+                            ############################
                             # add_df=edit_df[(edit_df["TYPE"]=="NAMPROD") & (edit_df["SUBCT"]=="REAL_SUB") & (edit_df["TEXT2"]==item)]
                             temp_df=pd.concat([temp_df,add_df]) 
                         #same pure-spec will be act as real-spec
-                        query=f'TYPE:NAMPROD && TEXT2:{cas_pspec}'
-                        add_df=querying_solr_data(query,params)
-                        # add_df=edit_df[(edit_df["TYPE"]=="NAMPROD") & (edit_df["TEXT2"]==cas_pspec)]
-                        temp_df=pd.concat([temp_df,add_df]) 
+                        # query=f'TYPE:NAMPROD && TEXT2:{cas_pspec}'
+                        # add_df=querying_solr_data(query,params)
+                        # # add_df=edit_df[(edit_df["TYPE"]=="NAMPROD") & (edit_df["TEXT2"]==cas_pspec)]
+                        # temp_df=pd.concat([temp_df,add_df]) 
                         searched_product_list=searched_product_list+product_level_creation(temp_df,product_rspec_category,"","","RSPEC*","PRODUCT-LEVEL","yes")                          
                 return JsonResponse(searched_product_list,content_type="application/json",safe=False)     
             except Exception as e:
@@ -399,3 +475,9 @@ def selected_products(requests):
     except Exception as e:
         print(e)
         return JsonResponse([],content_type="application/json",safe=False)
+
+def get_spec_list(requests):
+    if requests.method=="GET":
+        return JsonResponse(real_spec_list,content_type="application/json",safe=False)
+        
+        
