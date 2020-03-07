@@ -9,7 +9,7 @@ import re
 import pandas as pd
 import pysolr
 from momentive_backend.settings import SOLAR_CONFIGURATION as db_config
-from momentive_backend.settings import solr_product
+from momentive_backend.settings import solr_product,solr_notification_status,solr_unstructure_data
 count=0
 junk_column=["solr_id","_version_"]
 product_column = ["TYPE","TEXT1","TEXT2","TEXT3","TEXT4","SUBCT"]
@@ -41,12 +41,16 @@ db_url=db_config.get("URL")
 product_tb=db_config.get("product_core")
 spec_count=[]
 real_spec_list=[]
+cas_list=[]
+material_list=[]
 
 def selected_data_details():
     global selected_data_json
     return selected_data_json
 
 def product_level_creation(product_df,product_category_map,type,subct,key,level_name,filter_flag="no"):
+    global cas_list
+    global material_list
     json_list=[]
     if filter_flag=="no":
         if type !='' and subct !='':
@@ -55,6 +59,7 @@ def product_level_creation(product_df,product_category_map,type,subct,key,level_
             temp_df=product_df[(product_df["TYPE"]==type)]
     else:
         temp_df=product_df
+    
     temp_df.drop_duplicates(inplace=True)
     temp_df=temp_df.fillna("-")
     total_count=0
@@ -62,6 +67,7 @@ def product_level_creation(product_df,product_category_map,type,subct,key,level_
     json_category=''
     extract_column=[]
     for column,category in product_category_map:
+        
         extract_column.append(column) 
         try:
             col_count=list(temp_df[column].unique())
@@ -74,7 +80,13 @@ def product_level_creation(product_df,product_category_map,type,subct,key,level_
         category_count = len(col_count)
         total_count+=category_count
         display_category+=category+" - "+str(category_count)+" | "
-        json_category+= category+" | "  
+        json_category+= category+" | " 
+
+        #saving cas number globally
+        if column=="TEXT1" and category=="CAS NUMBER":
+            cas_list=cas_list+list(temp_df[column].unique())
+        if column=="TEXT1" and category=="MATERIAL NUMBER":
+            material_list=material_list+list(temp_df[column].unique())
                 
     display_category=display_category[:-3] 
     json_category=json_category[:-3]       
@@ -177,12 +189,17 @@ def selected_products(requests):
         global selected_data_json
         global real_spec_list
         global spec_count
+        global cas_list
+        global material_list
         if requests.method=="POST":
             try:
                 real_spec_list=[]
+                material_list=[]
+                cas_list=[]
                 spec_count=0
                 edit_df=pd.DataFrame()
                 searched_product_list=[]
+                cas_list=[]
                 data=''
                 count=0
                 params={"rows":2147483647}
@@ -577,4 +594,166 @@ def get_spec_list(requests):
     if requests.method=="GET":
         return JsonResponse(real_spec_list,content_type="application/json",safe=False)
         
+def home_page_details(requests):
+    if requests.method=="GET":
+        global cas_list
+        global material_list
+        home_page_details={}
+        if len(real_spec_list)>0:
+            print(material_list)
+            cas_list=list(set(cas_list))
+            material_list=list(set(material_list))
+            # print(cas_list)
+            product_attributes=[]
+            bdt_list=[]
+            namprod_list=[]
+            product_compliance=[]
+            customer_comm=[]
+            toxicology=[]
+            restricted_sub=[]
+            sales_information=[]
+            report_data=[]
+            home_spec_details=real_spec_list[0].get("name").split(" | ")
+            home_spec=home_spec_details[0]
+            home_namprod=home_spec_details[1]
+            print(home_spec_details)
+            print(home_namprod)
+            
+            #product attributes
+            params={"rows":2147483647,"fl":"TEXT1,TEXT2,TEXT3,TEXT4"}
+            query=f'TYPE:MATNBR && TEXT2:{home_spec}'
+            matinfo=solr_product.search(query,**params)
+            matstr=[]
+            for i in list(matinfo):
+                bdt=str(i.get("TEXT3")).strip()
+                bdt_list.append(bdt)
+                matnumber=str(i.get("TEXT1"))
+                desc=str(i.get("TEXT4"))
+                if bdt:
+                    bstr=bdt+" - "+matnumber+" - "+desc
+                    matstr.append(bstr)
+            bdt_list=list(set(bdt_list))
+            if len(matstr)>3:
+                matstr=", ".join(matstr[0:2])  
+            else:
+                matstr=", ".join(matstr)              
+            product_attributes.append({"image":"https://5.imimg.com/data5/CS/BR/MY-3222221/pharmaceuticals-chemicals-500x500.jpg"})
+            product_attributes.append({"Product Identification": str(home_spec)+"-"+str(home_namprod)})
+            product_attributes.append({"Material Information":str(matstr)})
+            home_page_details["Product Attributes"]=product_attributes
+
+            #product compliance
+            query=f'SUBID:{home_spec}'
+            params={"rows":2147483647,"fl":"RLIST"}
+            pcomp=list(solr_notification_status.search(query,**params))
+            country=[]
+            for r in pcomp:
+                place=r.get("RLIST")
+                country.append(place)
+            rlist=", ".join(country)
+            product_compliance.append({"image":"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS3WDKemmPJYhXsoGknA6nJwlRZTQzuYBY4xmpWAbInraPIJfAT"})
+            product_compliance.append({"Negative Regulatory Notification Lists":str(rlist)})            
+            #ag registartion
+            # query=f'CATEGORY:US-FDA && IS_RELEVANT:1 && PRODUCT:{home_namprod}'
+            # params={"rows":2147483647}
+            # usfda=list(solr_unstructure_data.search(query,**params))
+            ag_country=''
+            product_compliance.append({"AG Registration Status":ag_country})
+            home_page_details["Product compliance"]=product_compliance
+
+            #customer communication
+            usfda=[]
+            eufda=[]
+            usflag="No"
+            euflag="No"
+            query=f'CATEGORY:US-FDA && IS_RELEVANT:1 && PRODUCT:{home_namprod}'
+            params={"rows":2147483647}
+            usfda=list(solr_unstructure_data.search(query,**params))
+            if len(usfda)==0:
+                for b in bdt_list:
+                    query=f'CATEGORY:US-FDA && IS_RELEVANT:1 && PRODUCT:{b}'
+                    params={"rows":2147483647}
+                    usfda=list(solr_unstructure_data.search(query,**params))
+                    if len(usfda)>0:
+                        usflag="Yes"
+                        break
+            else:
+                usflag="Yes"
+            query=f'CATEGORY:EU-FDA && IS_RELEVANT:1 && PRODUCT:{home_namprod}'
+            params={"rows":2147483647}
+            eufda=list(solr_unstructure_data.search(query,**params))
+            if len(eufda)==0:
+                for b in bdt_list:
+                    query=f'CATEGORY:EU-FDA && IS_RELEVANT:1 && PRODUCT:{b}'
+                    params={"rows":2147483647}
+                    eufda=list(solr_unstructure_data.search(query,**params))
+                    if len(eufda)>0:
+                        euflag="Yes"
+                        break
+            else:
+                euflag="Yes"        
+            customer_comm.append({"image": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQzuuf2CXVDH2fVLuKJRbIqd14LsQSAGaKb7_hgs9HAOtSsQsCL"})
+            customer_comm.append({"US FDA Compliance" : usflag})
+            customer_comm.append({"EU Food Contact " : euflag})
+            customer_comm.append({"Top 3 Heavy Metal compositions":""})
+            home_page_details["Customer Communication"]=customer_comm
+
+            #toxicology
+            toxicology.append({ "image" : "https://flaptics.io/images/yu.png"})
+            toxicology.append({"Study Titles" : ""})
+            toxicology.append({"Toxicology Summary Report Available" : ""})
+            toxicology.append({"Pending Monthly Tox Studies": ""})
+            home_page_details["Toxicology"]=toxicology
+
+            #restricted_sub
+            gadsl=[]
+            gadsl_fg='No'
+            calprop=[]
+            cal_fg="No"
+            for cas in cas_list:
+                query=f'CATEGORY:GADSL && IS_RELEVANT:1 && PRODUCT:{cas}'
+                params={"rows":2147483647}
+                gadsl=list(solr_unstructure_data.search(query,**params))
+                if len(gadsl)>0:
+                    gadsl_fg='Yes'
+                    break
+            for cas in cas_list:
+                query=f'CATEGORY:CAL-PROP && IS_RELEVANT:1 && PRODUCT:{cas}'
+                params={"rows":2147483647}
+                calprop=list(solr_unstructure_data.search(query,**params))
+                if len(calprop)>0:
+                    cal_fg='Yes'
+                    break
+            restricted_sub.append({"image": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQnJXf4wky23vgRlLzdkExEFrkakubrov2OWcG9DTmDA1zA2-U-"})
+            restricted_sub.append({"Components Present in GADSL": gadsl_fg})
+            restricted_sub.append({"Components Present in Cal Prop 65":cal_fg})
+            home_page_details["Restricted Substance"]=restricted_sub
+
+            #sales_information
+            kg=0
+            sales_country=[]
+            sales_information.append({"image":"https://medschool.duke.edu/sites/medschool.duke.edu/files/styles/interior_image/public/field/image/reports.jpg?itok=F7UK-zyt"})
+            for mat in material_list:
+                query=f'CATEGORY:SAP-BW && IS_RELEVANT:1 && PRODUCT:{mat}'
+                params={"rows":2147483647,"fl":"DATA_EXTRACT"}
+                salesinfo=list(solr_unstructure_data.search(query,**params))
+                for data in salesinfo:
+                    datastr=json.loads(data.get("DATA_EXTRACT"))
+                    sales_country.append(datastr.get('Sold-to Customer Country'))
+                    print(datastr.get("SALES KG"))              
+                    kg=kg+int(datastr.get("SALES KG"))
+            sales_country=list(set(sales_country))     
+            sold_country=", ".join(sales_country)
+            sales_kg=str(kg)+" Kg"
+            sales_information.append({"Total sales in 2019" :sales_kg})
+            sales_information.append({"Regions where sold" :sold_country})
+            home_page_details["Sales Information"]=sales_information
+
+            #report data
+            report_data.append({ "image":"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQSReXGibHOlD7Z5nNqD4d4V52CVMmi-fGUEKMH2HE7srV_SzNn_g"})
+            report_data.append({"Report Status" :""})
+            home_page_details["Report Data"]=report_data
+
+
+        return JsonResponse(home_page_details,content_type="application/json",safe=False)
         
