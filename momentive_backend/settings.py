@@ -110,6 +110,7 @@ SOLAR_CONFIGURATION={
 solr_product= pysolr.Solr('https://52.152.191.13:8983/solr/product_information/', timeout=10,verify=False)
 solr_notification_status=pysolr.Solr('https://52.152.191.13:8983/solr/sap_notification_status/', timeout=10,verify=False)
 solr_unstructure_data=pysolr.Solr('https://52.152.191.13:8983/solr/unstructure_processed_data/', timeout=10,verify=False)
+solr_document_variant=pysolr.Solr('https://52.152.191.13:8983/solr/sap_document_variant/', timeout=10,verify=False)
 # Internationalization
 # https://docs.djangoproject.com/en/2.1/topics/i18n/
 
